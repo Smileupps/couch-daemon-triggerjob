@@ -7,7 +7,7 @@ Database-driven daemon to extend CouchDB and Couchapps with asynchronous events 
 Can be used to extend Couchapps capabilities with tasks like:
 
 * [send **e-mails**](https://www.smileupps.com/couch-triggerjob-send-email)
-* send **SMS**
+* [send **SMS**](https://www.smileupps.com/couch-triggerjob-send-sms)
 
 * interact with **third party APIs**:
     * authorize/receive **Paypal** payments
@@ -21,7 +21,7 @@ Can be used to extend Couchapps capabilities with tasks like:
 
 * **interact with your own database**: by retrieving documents, list or views, or [executing actions](https://www.smileupps.com/couchapp-tutorial-chatty-write-api) to modify its state
 
-* **transactions or chains**: to update multiple documents at-once, or more generally, to chain multiple tasks/requests, such as:
+* **[transactions or chains](https://www.smileupps.com/couch-triggerjob-couchdb-transactions)**: to update multiple documents at-once, or more generally, to chain multiple tasks/requests, such as:
 	* if user *Pippo* registers:
 	  * create the user document *org.couchdb.user:pippo*, 
 	  * create a new database named *db-pippo*,
