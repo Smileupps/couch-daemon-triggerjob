@@ -142,7 +142,6 @@ var executeTrigger = function(pathurl,dockey,trkey,tr,cb){
 	        				tr.headers = tr.headers?tr.headers:{};
 	        				tr.headers.authorization = credentials;
 	        			}
-	        			cbdone("Invalid schema");
 	        			break;
 	        	}
 
