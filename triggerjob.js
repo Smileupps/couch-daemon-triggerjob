@@ -69,7 +69,7 @@ var markTriggerAs = function(pathurl,tries, dockey, trkey, action, code, out, cb
         				case "conflict":
 		        			if (tries < 3) {
 			        			setTimeout(function(){
-			        				markTriggerAs(pathurl,tries+1, dockey, trkey, action, ok, out, cb);
+			        				markTriggerAs(pathurl,tries+1, dockey, trkey, action, code, out, cb);
 			        			},Math.random()*4000);
 		        			} else {
 		        				cb(parsed.reason);
