@@ -1,37 +1,45 @@
+process.env.NODE_PATH = "/usr/lib/nodejs:/usr/lib/node_modules:/usr/share/javascript";
+//__dirname;
+require('module').Module._initPaths();
+
+var os = require("os");
 var url = require('url');
 var http = require('http');
 var https = require('https');
+var request = require('request');
 var follow = require('follow');
+var triggers = {};
+var sysclient = http;
+var thishost = [os.hostname()];
 
 var args = process.argv.slice(2);
 var config = {};
 var port = 0;
-var credentials = false;
+var sysopt = {};
 var feeds = [];
+
+var loadTrigger = function(type) {
+	if (typeof triggers[type]!=="undefined") return triggers[type];
+	try {
+		triggers[type] = require('./trigger-'+type);
+	}catch(ex){
+		log("CANNOT FIND .JS FILE FOR TRIGGER TYPE: \""+type.toString()+"\"");
+		triggers[type] = false;
+	}
+	return triggers[type];
+};
 
 var log = function(mesg) {
   if (args.length>0) console.log(mesg);
   else console.log(JSON.stringify(["log", mesg]));
 };
 
-var serialize = function(obj, prefix) {
-  var str = [];
-  for(var p in obj) {
-    if (obj.hasOwnProperty(p)) {
-      var k = prefix ? prefix + "[" + p + "]" : p, v = obj[p];
-      str.push(typeof v == "object" ?
-        serialize(v, k) :
-        encodeURIComponent(k) + "=" + encodeURIComponent(v));
-    }
-  }
-  return str.join("&");
-}
-
 var escapeRegExp = function(string) {
     return string.replace(/([.*+?^=!:${}()|\[\]\/\\])/g, "\\$1");
 };
 
 var subst_config = function(obj) {
+	// replace config values: <!myvar!> will be replaced with value of <triggerjob.myvar>
 	if (typeof obj!="object") return obj;
 	var newtr = JSON.stringify(obj);
 	if (typeof obj.allowed == "object") {
@@ -48,128 +56,86 @@ var subst_config = function(obj) {
 
 
 var markTriggerAs = function(pathurl,tries, dockey, trkey, action, code, out, cb) {
-	log(tries.toString()+" Marking trigger "+trkey+"@"+dockey+" as "+action);
-	var req = http.request({
-        host: "127.0.0.1",
-        port: port.toString(),
-        path: pathurl+"/trigger/"+dockey,
-        method : "PUT",
-        headers:{authorization:credentials?credentials:""}
-    }, function(response) {
-        var body = '';
-        response.on('data', function(d) {
-            body += d;
-        });
-        response.on('end', function() {
-        	//log(tries.toString()+" Marking trigger "+ trkey+"@"+dockey+" as "+action+" onend "+body);
-        	try {
-        		var parsed = JSON.parse(body);
-        		if (parsed.error) {
-        			switch(parsed.error) {
-        				case "conflict":
-		        			if (tries < 3) {
-			        			setTimeout(function(){
-			        				markTriggerAs(pathurl,tries+1, dockey, trkey, action, code, out, cb);
-			        			},Math.random()*4000);
-		        			} else {
-		        				cb(parsed.reason);
-		        			}
-        					break;
-        				default:
-        					cb(parsed.reason);
-        					break;
-        			}
-        		} else {
-        			if (!parsed.ok)log("UNK:"+body);
-        			var err = !parsed.ok?(parsed.msg||"Unknown error"):false;
-	        		cb(err,parsed);
+	//log(tries.toString()+" Marking trigger "+trkey+"@"+dockey+" as "+action);
+
+	var ropt = { 
+		method: 'PUT'
+	    , url:pathurl+"/trigger/"+dockey
+	    , headers : sysopt.headers
+	    //, json : true
+	    , body : JSON.stringify({
+			'action' : action,
+      		'trkey' : trkey,
+      		'code' : code,
+      		'out' : out	    	
+	    })
+	};
+	//log("PREP REQUEST: "+JSON.stringify(ropt));
+	//log("Trigger url: "+pathurl+"/trigger/"+dockey);
+
+	request(ropt , function (error, response, body) {
+		var e = (error||"").toString();
+	  	if (e.length>0) {
+	  		cb("REQUEST EXCEPTION:"+e);
+	  	} else {
+		  	//log("RESPONSE("+(response.statusCode||"").toString()+"):"+(body||"").substring(0,200));
+			try {
+        		switch(parseInt(response.statusCode)) {
+        			case 200:
+        			case 201:
+        				cb(false,body);
+        				break;
+
+        			case 409:
+	        			if (tries < 3) {
+		        			setTimeout(function(){
+		        				markTriggerAs(pathurl,tries+1, dockey, trkey, action, code, out, cb);
+		        			},Math.random()*4000);
+	        			} else {
+	        				cb("Conflict persists after 3 attempts");
+	        			}
+        				break;
+
+        			default:
+        				cb(body)
+        				break;
         		}
         	} catch(ex){
         		cb(ex);
         	}
-        });
-    });
-    req.on('error', function(ex) {
-		cb(ex);
+	    }
 	});
-	req.write(JSON.stringify({ 
-      'action' : action,
-      'trkey' : trkey,
-      'code' : code,
-      'out' : out
-    }));
-    req.end();	
+
+
 };
 
-var executeTrigger = function(pathurl,dockey,trkey,tr,cb){
+var executeTrigger = function(pathurl,dockey,trkey,tr,executecb){
 	var cbdone = function(code,out){
-		var err = typeof code != "number";
-		markTriggerAs(pathurl,0,dockey,trkey,'done',err?null:code,err?err:out,function(error,data){
-    		//log(error);
+		var iserrmsg = typeof code != "number";
+		markTriggerAs(pathurl,0,dockey,trkey,'done',iserrmsg?false:code,iserrmsg?code:out,function(error,data){
 			if (!error) {
-	        	log("DONE "+ trkey+"@"+dockey+": "+JSON.stringify(data));
-	        	cb();
+	        	log("DONE "+ trkey+"@"+dockey+": "+(data||""));
+	        	executecb();
 			} else {
-				cb(error);
+				executecb(error);
 			}
 		});		
 	};
 
-	markTriggerAs(pathurl,0,dockey,trkey,'queued',null,null,function(error,data){
-        //log(error);
-		if (!error) {
-        	log("QUEUED "+ trkey+"@"+dockey+": "+JSON.stringify(data));
+	var fn = loadTrigger((tr.type||"http").toString());
+	if (fn) {
+		markTriggerAs(pathurl,0,dockey,trkey,'queued',null,null,function(error,data){
+			if (!error) {
+	        	log("QUEUED "+ trkey+"@"+dockey+": "+(data||""));
 
-    		// replace config values: {{myvar}} will be replaced with value of <triggerjob.myvar>
-        	var schema = ["http","https"].indexOf((tr.path||"").toLowerCase().split(":")[0]),
-        		httpclient=http, opt = {},
-        		opt = url.parse(tr.path||"");
-        	if (typeof tr.path=="string") {
-	        	switch(schema) {
-	        		case 0:
-	        			httpclient=http;
-	        			opt.port = 80; // overwrite
-	        			break;
-	        		case 1:
-						httpclient=https;
-	        			opt.port = 443; // overwrite
-	        			break;
-	        		default:
-	        			opt.host = '127.0.0.1'; // overwrite
-	        			opt.port = port.toString(); // overwrite
-	        			opt.path = pathurl+opt.path;
-	        			if (credentials) {
-	        				tr.headers = tr.headers?tr.headers:{};
-	        				tr.headers.authorization = credentials;
-	        			}
-	        			break;
-	        	}
-
-	        	opt.headers = tr.headers||{};
-	        	opt.method = (tr.method||"PUT").toUpperCase();
-	        	//log(JSON.stringify(opt));
-				var req = httpclient.request(opt, function(response) {
-			        var body = '';
-			        response.on('data', function(d) {
-			            body += d;
-			        });
-			        response.on('end', function() {
-	        			log((body||"").substring(0,200));
-		        		cbdone(response.statusCode,body);
-			        });
-			    });
-			    req.on('error', function(ex) {
-			    	cbdone(ex);
-				});
-				req.write(tr.asquery?serialize(tr.params||"{}"):JSON.stringify(tr.params||{}));
-				req.end();
+				fn(log,sysopt,pathurl,tr,dockey,trkey,cbdone);
 			} else {
-				cbdone("Trigger parameter \"path\" does not exists or is not a string");
+				executecb(error);
 			}
-		} else {
-			cb(error);
-		}
-	})
+		})
+	} else {
+		executecb("Cannot find trigger type \""+(tr.type||"http")+"\"");
+	}
 };
 
 var executeAt =function(pathurl,id,trkey,tr,cb) {
@@ -198,16 +164,25 @@ var executeAt =function(pathurl,id,trkey,tr,cb) {
 };
 
 var followChanges = function(path) {
-	var cb=function(){},
-		pathurl="http://127.0.0.1:"+port.toString()+path;
-	log("Following url: "+path);
-	return follow({db:pathurl+"/follow",headers:{authorization:credentials?credentials:""}}, function(error, change) {
+	var cb=function(err){
+		if (typeof err !== "undefined") {
+			log("EXECUTEAT-CB: "+(err||"UNK-ERROR"));
+		}
+	}, opt=sysopt, pathurl=""; 
+    opt.pathname = path;
+	pathurl = url.format(opt);
+
+	log("Following path: "+path);
+	log("Following url: "+pathurl);
+	return follow({db:pathurl+"/follow",headers:opt.headers}, function(error, change) {
+	    //log("follow changes return a doc");
 		  if(!error) {
-		    //console.log("Got change number " + change.seq + ": " + change.id);
+		    log("Got change number " + change.seq + ": " + change.id);
 		    for (var trkey in change.doc&&change.doc.triggers?change.doc.triggers:{}){
 		    	var tr = change.doc.triggers[trkey];
-				if (!tr.queued) {
-					executeAt(path,change.id,trkey,subst_config(tr),cb);
+				if (typeof tr.queued==="undefined" && (!tr.h||thishost.indexOf(tr.h||"")>=0)) {
+					log("CALLING ExecuteAt "+trkey)
+					executeAt(pathurl,change.id,trkey,subst_config(tr),cb);
 				}
 		    }
 		  } else {
@@ -232,22 +207,29 @@ var start = function(paths){
 };
 
 var cmdlineinit = function(){
-	port = args[0];
-	credentials = "Basic "+(new Buffer(args[1]||"").toString('base64'));
+	sysopt = url.parse(args[0]||"");
+	sysopt.method = "GET";
+	var credentials = "Basic "+(new Buffer(args[1]||"").toString('base64'));
+    sysopt.headers = {authorization:credentials?credentials:""}
 
-	var req = http.request({
-        host: "127.0.0.1",
-        port: port.toString(),
-        path: "/_config/triggerjob",
-        method : "GET",
-        headers:{authorization:credentials?credentials:""}
-    }, function(response) {
+	var schema = ["http","https"].indexOf((sysopt.protocol||"").toLowerCase().split(":")[0]);
+	if (schema === 1) {
+		sysclient = https;
+		sysopt.protocol = "https:";
+		//sysopt.hostname = sysopt.host;
+		//sysopt.port = sysopt.port||443;
+	}
+
+    var opt=sysopt; 
+    opt.path = "/_config/triggerjob"; opt.method = "GET";
+	var req = sysclient.request(opt, function(response) {
         var body = '';
         response.on('data', function(d) {
             body += d;
         });
         response.on('end', function(d) {
             try {
+            	if (response.statusCode!=200) throw(body);
             	config = JSON.parse(body);
             	start(config.job_path);
             } catch(ex) {
@@ -282,7 +264,17 @@ stdin.on('data', function(msg) {
 		} else if (parsed.job_path)  { 
 			//log("triggerjob config: " + msg);
 			config = parsed;
-			credentials = "Basic "+(new Buffer(config.job_authorization||"").toString('base64'));
+			var credentials = "Basic "+(new Buffer(config.job_authorization||"").toString('base64'));
+
+			sysclient = http;
+			sysopt = url.parse("http://127.0.0.1:"+port.toString());
+			//sysopt.host = "127.0.0.1:"+port;
+			//sysopt.hostname = "127.0.0.1";
+			delete sysopt.host;
+			//sysopt.port = port;
+			sysopt.method = "GET";
+		    sysopt.headers = {authorization:credentials?credentials:""}
+
 			start(config.job_path);
 		} else {
 			log("Discarding unknown message: " + msg);
