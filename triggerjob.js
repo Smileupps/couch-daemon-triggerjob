@@ -30,12 +30,12 @@ var loadTrigger = function(type) {
 };
 
 var log = function(mesg) {
-  if (args.length>0) console.log(mesg);
-  else console.log(JSON.stringify(["log", mesg]));
+	if (args.length>0) console.log(mesg);
+	else console.log(JSON.stringify(["log", mesg]));
 };
 
 var escapeRegExp = function(string) {
-    return string.replace(/([.*+?^=!:${}()|\[\]\/\\])/g, "\\$1");
+	return string.replace(/([.*+?^=!:${}()|\[\]\/\\])/g, "\\$1");
 };
 
 var subst_config = function(obj) {
@@ -60,50 +60,50 @@ var markTriggerAs = function(pathurl,tries, dockey, trkey, action, code, out, cb
 
 	var ropt = { 
 		method: 'PUT'
-	    , url:pathurl+"/trigger/"+dockey
-	    , headers : sysopt.headers
-	    //, json : true
-	    , body : JSON.stringify({
+		, url:pathurl+"/trigger/"+dockey
+		, headers : sysopt.headers
+		//, json : true
+		, body : JSON.stringify({
 			'action' : action,
-      		'trkey' : trkey,
-      		'code' : code,
-      		'out' : out	    	
-	    })
+			'trkey' : trkey,
+			'code' : code,
+			'out' : out	    	
+		})
 	};
 	//log("PREP REQUEST: "+JSON.stringify(ropt));
 	//log("Trigger url: "+pathurl+"/trigger/"+dockey);
 
 	request(ropt , function (error, response, body) {
 		var e = (error||"").toString();
-	  	if (e.length>0) {
-	  		cb("REQUEST EXCEPTION:"+e);
-	  	} else {
-		  	//log("RESPONSE("+(response.statusCode||"").toString()+"):"+(body||"").substring(0,200));
+		if (e.length>0) {
+			cb("REQUEST EXCEPTION:"+e);
+		} else {
+			//log("RESPONSE("+(response.statusCode||"").toString()+"):"+(body||"").substring(0,200));
 			try {
-        		switch(parseInt(response.statusCode)) {
-        			case 200:
-        			case 201:
-        				cb(false,body);
-        				break;
+				switch(parseInt(response.statusCode)) {
+					case 200:
+					case 201:
+						cb(false,body);
+						break;
 
-        			case 409:
-	        			if (tries < 3) {
-		        			setTimeout(function(){
-		        				markTriggerAs(pathurl,tries+1, dockey, trkey, action, code, out, cb);
-		        			},Math.random()*4000);
-	        			} else {
-	        				cb("Conflict persists after 3 attempts");
-	        			}
-        				break;
+					case 409:
+						if (tries < 3) {
+							setTimeout(function(){
+								markTriggerAs(pathurl,tries+1, dockey, trkey, action, code, out, cb);
+							},Math.random()*4000);
+						} else {
+							cb("Conflict persists after 3 attempts");
+						}
+						break;
 
-        			default:
-        				cb(body)
-        				break;
-        		}
-        	} catch(ex){
-        		cb(ex);
-        	}
-	    }
+					default:
+						cb(body)
+						break;
+				}
+			} catch(ex){
+				cb(ex);
+			}
+		}
 	});
 
 
@@ -114,20 +114,19 @@ var executeTrigger = function(pathurl,dockey,trkey,tr,executecb){
 		var iserrmsg = typeof code != "number";
 		markTriggerAs(pathurl,0,dockey,trkey,'done',iserrmsg?false:code,iserrmsg?code:out,function(error,data){
 			if (!error) {
-	        	log("DONE "+ trkey+"@"+dockey+": "+(data||""));
-	        	executecb();
+				log("DONE "+ trkey+"@"+dockey+": "+(data||""));
+				executecb();
 			} else {
 				executecb(error);
 			}
 		});		
 	};
-
+	
 	var fn = loadTrigger((tr.type||"http").toString());
 	if (fn) {
 		markTriggerAs(pathurl,0,dockey,trkey,'queued',null,null,function(error,data){
 			if (!error) {
-	        	log("QUEUED "+ trkey+"@"+dockey+": "+(data||""));
-
+				log("QUEUED "+ trkey+"@"+dockey+": "+(data||""));
 				fn(log,sysopt,pathurl,tr,dockey,trkey,cbdone);
 			} else {
 				executecb(error);
@@ -139,7 +138,7 @@ var executeTrigger = function(pathurl,dockey,trkey,tr,executecb){
 };
 
 var executeAt =function(pathurl,id,trkey,tr,cb) {
-    var now = new Date().getTime();
+	var now = new Date().getTime();
 	//tr.start = now+20000;
 	if ((tr.delay||0)>0) {
 		setTimeout(function(){
@@ -169,25 +168,25 @@ var followChanges = function(path) {
 			log("EXECUTEAT-CB: "+(err||"UNK-ERROR"));
 		}
 	}, opt=sysopt, pathurl=""; 
-    opt.pathname = path;
+	opt.pathname = path;
 	pathurl = url.format(opt);
-
+	
 	log("Following path: "+path);
 	log("Following url: "+pathurl);
 	return follow({db:pathurl+"/follow",headers:opt.headers}, function(error, change) {
-	    //log("follow changes return a doc");
-		  if(!error) {
-		    log("Got change number " + change.seq + ": " + change.id);
-		    for (var trkey in change.doc&&change.doc.triggers?change.doc.triggers:{}){
-		    	var tr = change.doc.triggers[trkey];
+		//log("follow changes return a doc");
+		if(!error) {
+			log("Got change number " + change.seq + ": " + change.id);
+			for (var trkey in change.doc&&change.doc.triggers?change.doc.triggers:{}){
+				var tr = change.doc.triggers[trkey];
 				if (typeof tr.queued==="undefined" && (!tr.h||thishost.indexOf(tr.h||"")>=0)) {
 					log("CALLING ExecuteAt "+trkey)
 					executeAt(pathurl,change.id,trkey,subst_config(tr),cb);
 				}
-		    }
-		  } else {
-		  	log(error.toString());
-		  }
+			}
+		} else {
+			log(error.toString());
+		}
 	});
 };
 
@@ -220,24 +219,24 @@ var cmdlineinit = function(){
 		//sysopt.port = sysopt.port||443;
 	}
 
-    var opt=sysopt; 
-    opt.path = "/_config/triggerjob"; opt.method = "GET";
+	var opt=sysopt; 
+	opt.path = "/_config/triggerjob"; opt.method = "GET";
 	var req = sysclient.request(opt, function(response) {
-        var body = '';
-        response.on('data', function(d) {
-            body += d;
-        });
-        response.on('end', function(d) {
-            try {
-            	if (response.statusCode!=200) throw(body);
-            	config = JSON.parse(body);
-            	start(config.job_path);
-            } catch(ex) {
-            	log("init exception: "+ ex.toString());
-            }
-        });
-    }).on('error', function(ex) {
-    	log(ex);
+		var body = '';
+		response.on('data', function(d) {
+			body += d;
+		});
+		response.on('end', function(d) {
+			try {
+				if (response.statusCode!=200) throw(body);
+				config = JSON.parse(body);
+				start(config.job_path);
+			} catch(ex) {
+				log("init exception: "+ ex.toString());
+			}
+		});
+	}).on('error', function(ex) {
+		log(ex);
 	}).end();
 };
 
@@ -265,7 +264,7 @@ stdin.on('data', function(msg) {
 			//log("triggerjob config: " + msg);
 			config = parsed;
 			var credentials = "Basic "+(new Buffer(config.job_authorization||"").toString('base64'));
-
+			
 			sysclient = http;
 			sysopt = url.parse("http://127.0.0.1:"+port.toString());
 			//sysopt.host = "127.0.0.1:"+port;
@@ -273,8 +272,8 @@ stdin.on('data', function(msg) {
 			delete sysopt.host;
 			//sysopt.port = port;
 			sysopt.method = "GET";
-		    sysopt.headers = {authorization:credentials?credentials:""}
-
+			sysopt.headers = {authorization:credentials?credentials:""}
+			
 			start(config.job_path);
 		} else {
 			log("Discarding unknown message: " + msg);
